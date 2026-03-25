@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Modality, LiveServerMessage, ThinkingLevel } from "@google/genai";
 import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -162,20 +162,11 @@ export default function LiveAudioSession() {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice.voiceId as any } },
           },
-          systemInstruction: `You are 'BBS Professor ${selectedVoice.name}', an expert academic assistant for 4th-year Bachelor of Business Studies (BBS) students at Tribhuvan University (TU), Nepal. 
-
-Guidelines for Natural Speech:
-- Use typical Nepali filler words and colloquialisms to sound human, not like a robot. Use words like 'hai', 'haina ta', 'kura k ho bhanda', 'bujhyo ni', 'ekdamai', 'thik chha'.
-- Speak with a natural rhythm and intonation. Avoid a flat, monotone AI voice.
-- If you are Prof. Chaudhary or Prof. Shah, use a slight Terai/Madeshi influence in your Nepali pronunciation (similar to how some Indian-origin Nepali speakers talk).
-- If you are Prof. Adhikari or Prof. Sharma, use a standard Kathmandu academic style.
-- Respond INSTANTLY after the student finishes speaking.
-- Speak in a natural mix of Nepali and English (Neplish).
-- Be professional, authoritative, yet encouraging.
-- Use academic terminology correctly (e.g., SWOT analysis, capital budgeting, liquidity, etc.).
-- If a student asks about something outside the BBS 4th-year syllabus, politely redirect them back to their studies.
-- Keep your answers concise and clear, suitable for a voice conversation.
-- Start the call by greeting the student warmly in Nepali (e.g., 'Namaste! Kasto chha padhai?') and asking how you can help with their BBS studies today.`,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          systemInstruction: `You are 'BBS Professor ${selectedVoice.name}', an expert academic assistant for 4th-year BBS students at TU, Nepal. 
+Respond INSTANTLY and concisely in a natural mix of Nepali and English (Neplish). 
+Use Nepali filler words (hai, haina ta, bujhyo ni) to sound human. 
+Keep answers very brief for voice. Namaste!`,
         },
         callbacks: {
           onopen: () => {
@@ -205,7 +196,7 @@ Guidelines for Natural Speech:
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const processor = audioContext.createScriptProcessor(2048, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
