@@ -1,0 +1,7 @@
+{
+  "name": "BBS Professor",
+  "description": "A real-time voice assistant for BBS 4th year students at Tribhuvan University, providing expert academic guidance in a mix of Nepali and English.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
