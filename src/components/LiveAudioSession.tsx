@@ -137,7 +137,21 @@ export default function LiveAudioSession() {
     try {
       setIsConnecting(true);
       setError(null);
+
+      // Check for microphone permission explicitly
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop()); // Stop immediately, just testing permission
+      } catch (err) {
+        console.error("Microphone permission denied:", err);
+        throw new Error("Microphone permission denied. Please enable it in your app/browser settings.");
+      }
+
       setShowVoicePicker(false);
+
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("API Key missing. Please set GEMINI_API_KEY in Vercel environment variables.");
+      }
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
