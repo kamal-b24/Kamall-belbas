@@ -11,7 +11,21 @@
     <link rel="apple-touch-icon" href="https://picsum.photos/seed/bbsprof/192/192" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #000; color: #fff; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h1 style="font-size: 2rem; margin-bottom: 1rem;">BBS Professor</h1>
+          <p style="color: #666;">Initializing application...</p>
+          <p id="debug-status" style="font-size: 0.8rem; color: #444; margin-top: 2rem;">Waiting for scripts...</p>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.addEventListener('load', () => {
+        const status = document.getElementById('debug-status');
+        if (status) status.innerText = 'Scripts loaded, starting React...';
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

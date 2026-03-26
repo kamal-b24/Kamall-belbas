@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, ThinkingLevel } from "@google/genai";
-import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
@@ -18,6 +18,9 @@ const VOICES = [
 ];
 
 export default function LiveAudioSession() {
+  console.log('LiveAudioSession component rendering');
+  const status = document.getElementById('debug-status');
+  if (status) status.innerText = 'LiveAudioSession component rendering...';
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -38,17 +41,25 @@ export default function LiveAudioSession() {
   const isPlayingRef = useRef(false);
 
   useEffect(() => {
+    console.log('LiveAudioSession mount effect');
     const updateTime = () => {
-      const ktmTime = new Date().toLocaleTimeString('en-US', { 
-        timeZone: 'Asia/Kathmandu', 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: false 
-      });
-      setCurrentTime(ktmTime);
+      try {
+        const ktmTime = new Date().toLocaleTimeString('en-US', { 
+          timeZone: 'Asia/Kathmandu', 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          hour12: false 
+        });
+        setCurrentTime(ktmTime);
+      } catch (e) {
+        console.error('Time format error:', e);
+        setCurrentTime(new Date().toLocaleTimeString());
+      }
     };
     updateTime();
     const interval = setInterval(updateTime, 10000);
+    const status = document.getElementById('debug-status');
+    if (status) status.innerText = 'LiveAudioSession mounted successfully!';
     return () => clearInterval(interval);
   }, []);
 
@@ -149,11 +160,13 @@ export default function LiveAudioSession() {
 
       setShowVoicePicker(false);
 
-      if (!process.env.GEMINI_API_KEY) {
-        throw new Error("API Key missing. Please set GEMINI_API_KEY in Vercel environment variables.");
+      const apiKey = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : (import.meta as any).env.VITE_GEMINI_API_KEY;
+      
+      if (!apiKey) {
+        throw new Error("API Key missing. Please set GEMINI_API_KEY in environment variables.");
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       
       const session = await ai.live.connect({
         model: MODEL,
