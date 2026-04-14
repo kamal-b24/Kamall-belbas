@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, ThinkingLevel } from "@google/genai";
-import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, LogIn, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth, googleProvider, db } from '../firebase';
+import { signInWithPopup, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { getAccessToken, QuotaExceededError } from '../auth-utils';
 
 const MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
@@ -21,6 +25,12 @@ export default function LiveAudioSession() {
   console.log('LiveAudioSession component rendering');
   const status = document.getElementById('debug-status');
   if (status) status.innerText = 'LiveAudioSession component rendering...';
+  
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [showQuotaUpgrade, setShowQuotaUpgrade] = useState(false);
+
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -39,6 +49,39 @@ export default function LiveAudioSession() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioQueueRef = useRef<Int16Array[]>([]);
   const isPlayingRef = useRef(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setIsAuthLoading(false);
+      if (currentUser) {
+        // Create/Update user profile in Firestore
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          uid: currentUser.uid,
+          email: currentUser.email,
+          displayName: currentUser.displayName,
+          photoURL: currentUser.photoURL,
+          lastLogin: serverTimestamp()
+        }, { merge: true });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleSignIn = async () => {
+    try {
+      setError(null);
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      console.error("Sign in failed:", err);
+      setError("Sign in failed. Please try again.");
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setAccessToken(null);
+  };
 
   useEffect(() => {
     console.log('LiveAudioSession mount effect');
@@ -160,6 +203,22 @@ export default function LiveAudioSession() {
 
       setShowVoicePicker(false);
 
+      // Get OAuth token for Gemini Connect
+      let token = accessToken;
+      if (!token) {
+        try {
+          token = await getAccessToken();
+          setAccessToken(token);
+        } catch (err: any) {
+          console.error("Failed to get access token:", err);
+          // If it's a timeout or popup block, we should probably stop and let the user try again
+          if (err.message.includes("timed out") || err.message.includes("blocked")) {
+            throw err;
+          }
+          // Fallback to API key if OAuth fails for other reasons
+        }
+      }
+
       const apiKey = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : (import.meta as any).env.VITE_GEMINI_API_KEY;
       
       if (!apiKey) {
@@ -176,6 +235,7 @@ export default function LiveAudioSession() {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice.voiceId as any } },
           },
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          tools: [{ googleSearch: {} }],
           systemInstruction: `You are 'BBS Professor ${selectedVoice.name}', an expert academic assistant for 4th-year BBS students at TU, Nepal. 
 Respond INSTANTLY and concisely in a natural mix of Nepali and English (Neplish). 
 Use Nepali filler words (hai, haina ta, bujhyo ni) to sound human. 
@@ -231,9 +291,23 @@ Keep answers very brief for voice. Namaste!`,
       source.connect(processor);
       processor.connect(audioContext.destination);
 
-    } catch (err) {
+      // Log call start
+      if (user) {
+        await addDoc(collection(db, 'calls'), {
+          userId: user.uid,
+          professorId: selectedVoice.id,
+          professorName: selectedVoice.name,
+          timestamp: serverTimestamp(),
+          status: 'started'
+        });
+      }
+
+    } catch (err: any) {
       console.error("Failed to start call:", err);
-      setError("Could not access microphone or connect to AI.");
+      if (err instanceof QuotaExceededError) {
+        setShowQuotaUpgrade(true);
+      }
+      setError(err.message || "Could not access microphone or connect to AI.");
       setIsConnecting(false);
       setShowVoicePicker(true);
     }
@@ -276,6 +350,11 @@ Keep answers very brief for voice. Namaste!`,
         <div className="h-12 flex items-center justify-between px-8 pt-4 z-10">
           <span className="text-sm font-semibold">{currentTime}</span>
           <div className="flex gap-1.5 items-center">
+            {user && (
+              <button onClick={handleSignOut} className="mr-2 opacity-60 hover:opacity-100 transition-opacity">
+                <LogOut size={14} />
+              </button>
+            )}
             <div className="w-4 h-2 bg-white/40 rounded-full" />
             <div className="w-4 h-2 bg-white/40 rounded-full" />
             <div className="w-4 h-2 bg-white rounded-full" />
@@ -283,7 +362,45 @@ Keep answers very brief for voice. Namaste!`,
         </div>
 
         <AnimatePresence mode="wait">
-          {showVoicePicker ? (
+          {isAuthLoading ? (
+            <motion.div 
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex-1 flex items-center justify-center"
+            >
+              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            </motion.div>
+          ) : !user ? (
+            <motion.div 
+              key="login"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.1 }}
+              className="flex-1 flex flex-col items-center justify-center px-10 text-center"
+            >
+              <div className="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl shadow-blue-600/20">
+                <Phone size={48} className="text-white" />
+              </div>
+              <h1 className="text-3xl font-bold mb-4">BBS Professor</h1>
+              <p className="text-neutral-400 mb-10 leading-relaxed">
+                Connect with expert professors for your BBS 4th-year studies. Sign in to start your voice session.
+              </p>
+              <button 
+                onClick={handleSignIn}
+                className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 rounded-2xl font-bold hover:bg-neutral-200 transition-colors active:scale-95"
+              >
+                <LogIn size={20} />
+                Sign in with Google
+              </button>
+              {!process.env.VITE_CLIENT_ID && (
+                <p className="text-amber-500 mt-4 text-xs bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                  Warning: VITE_CLIENT_ID is not set in Secrets. Gemini Connect features will be limited.
+                </p>
+              )}
+              {error && <p className="text-red-500 mt-4 text-sm">{error}</p>}
+            </motion.div>
+          ) : showVoicePicker ? (
             <motion.div 
               key="picker"
               initial={{ opacity: 0, y: 20 }}
@@ -381,6 +498,41 @@ Keep answers very brief for voice. Namaste!`,
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Quota Upgrade Notification */}
+        {showQuotaUpgrade && (
+          <div className="absolute inset-0 z-50 flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ y: 100 }}
+              animate={{ y: 0 }}
+              className="w-full p-[1px] rounded-3xl"
+              style={{ background: 'conic-gradient(from 0deg at 50% 50%, #323336 19.35%, #4285F4 31.96%, #1AA64A 53.75%, #323336 74.94%, #FCBD00 81.08%, #DB372D 89.49%, #323336 100%)' }}
+            >
+              <div className="bg-neutral-900 rounded-[23px] p-6 text-left">
+                <h3 className="text-white text-lg font-medium mb-2">Upgrade to continue your flow</h3>
+                <p className="text-neutral-400 text-sm mb-6">
+                  You’ve reached your AI usage limit for the day, you can wait for it to reset or upgrade to continue and unlock even more.
+                </p>
+                <div className="flex gap-3">
+                  <a 
+                    href="https://one.google.com/ai?utm_source=ai_studio" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex-1 bg-neutral-800 text-white py-3 rounded-xl text-center font-medium hover:bg-neutral-700 transition-colors"
+                  >
+                    Continue to upgrade
+                  </a>
+                  <button 
+                    onClick={() => setShowQuotaUpgrade(false)}
+                    className="px-6 py-3 text-neutral-400 hover:text-white transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
 
         {/* Bottom Bar Indicator */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-36 h-1.5 bg-white/10 rounded-full" />

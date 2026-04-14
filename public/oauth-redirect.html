@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth Redirect</title>
+</head>
+<body>
+    <script>
+        console.log("OAuth redirect page loaded at origin:", window.location.origin);
+        // Parse the hash fragment from the URL
+        const params = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = params.get('access_token');
+        const error = params.get('error');
+
+        if (accessToken) {
+            console.log("Access token found, sending to opener...");
+            // Send the access token back to the main window
+            if (window.opener) {
+                window.opener.postMessage({
+                    type: 'oauth_success',
+                    response: { access_token: accessToken }
+                }, window.location.origin);
+                console.log("Message sent, closing window.");
+                window.close();
+            } else {
+                console.error("No opener window found!");
+            }
+        } else if (error) {
+            console.error('OAuth Error:', error);
+            if (window.opener) {
+                window.opener.postMessage({
+                    type: 'oauth_error',
+                    error: error
+                }, window.location.origin);
+            }
+            window.close();
+        } else {
+            console.log("No token or error found in URL hash.");
+        }
+    </script>
+</body>
+</html>
