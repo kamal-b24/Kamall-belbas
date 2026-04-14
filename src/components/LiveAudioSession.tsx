@@ -219,13 +219,14 @@ export default function LiveAudioSession() {
         }
       }
 
-      const apiKey = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : (import.meta as any).env.VITE_GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY;
       
-      if (!apiKey) {
-        throw new Error("API Key missing. Please set GEMINI_API_KEY in environment variables.");
+      // Initialize AI with either accessToken (per-user quota) or apiKey (developer quota)
+      const ai = new GoogleGenAI(token ? { accessToken: token } : { apiKey: apiKey! });
+      
+      if (!token && !apiKey) {
+        throw new Error("Authentication failed. Please sign in or provide an API key.");
       }
-
-      const ai = new GoogleGenAI({ apiKey });
       
       const session = await ai.live.connect({
         model: MODEL,
