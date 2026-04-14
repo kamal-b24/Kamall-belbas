@@ -8,7 +8,9 @@ const SIGNIN_TIMEOUT = 60000; // 60 seconds
  */
 export const getAccessToken = (): Promise<string> => {
   const clientId = process.env.VITE_CLIENT_ID;
-  const appUrl = process.env.VITE_APP_URL || window.location.origin;
+  const appUrl = (process.env.VITE_APP_URL && process.env.VITE_APP_URL !== "undefined") 
+    ? process.env.VITE_APP_URL 
+    : window.location.origin;
   const oauthUrl = `${appUrl}/oauth-redirect.html`;
   const scope = 'https://www.googleapis.com/auth/generative-language.peruserquota';
   const authPopupUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(oauthUrl)}&response_type=token&scope=${encodeURIComponent(scope)}`;

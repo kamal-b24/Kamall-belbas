@@ -71,10 +71,18 @@ export default function LiveAudioSession() {
   const handleSignIn = async () => {
     try {
       setError(null);
-      await signInWithPopup(auth, googleProvider);
+      console.log("Starting Firebase sign-in...");
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log("Firebase sign-in successful:", result.user.email);
     } catch (err: any) {
       console.error("Sign in failed:", err);
-      setError("Sign in failed. Please try again.");
+      let errorMessage = "Sign in failed. ";
+      if (err.code === 'auth/unauthorized-domain') {
+        errorMessage += "This domain is not authorized in Firebase Console. Please add your Vercel domain to 'Authorized domains' in Firebase Authentication settings.";
+      } else {
+        errorMessage += err.message || "Please try again.";
+      }
+      setError(errorMessage);
     }
   };
 
@@ -207,15 +215,16 @@ export default function LiveAudioSession() {
       let token = accessToken;
       if (!token) {
         try {
+          console.log("Attempting to get Gemini Connect access token...");
           token = await getAccessToken();
           setAccessToken(token);
+          console.log("Gemini Connect token obtained successfully.");
         } catch (err: any) {
           console.error("Failed to get access token:", err);
-          // If it's a timeout or popup block, we should probably stop and let the user try again
+          setError(`Gemini Connect Error: ${err.message}`);
           if (err.message.includes("timed out") || err.message.includes("blocked")) {
             throw err;
           }
-          // Fallback to API key if OAuth fails for other reasons
         }
       }
 
@@ -400,6 +409,18 @@ Keep answers very brief for voice. Namaste!`,
                 </p>
               )}
               {error && <p className="text-red-500 mt-4 text-sm">{error}</p>}
+              
+              <div className="mt-8 pt-8 border-t border-neutral-800 w-full text-left">
+                <details className="text-[10px] text-neutral-600 cursor-pointer">
+                  <summary className="hover:text-neutral-400 transition-colors">Debug Configuration Info</summary>
+                  <div className="mt-2 space-y-1 bg-black/30 p-3 rounded-lg font-mono">
+                    <p>Origin: {window.location.origin}</p>
+                    <p>Client ID: {process.env.VITE_CLIENT_ID ? "✅ Set" : "❌ Missing"}</p>
+                    <p>App URL: {process.env.VITE_APP_URL || "Using Origin"}</p>
+                    <p>Redirect URI: {`${process.env.VITE_APP_URL || window.location.origin}/oauth-redirect.html`}</p>
+                  </div>
+                </details>
+              </div>
             </motion.div>
           ) : showVoicePicker ? (
             <motion.div 
