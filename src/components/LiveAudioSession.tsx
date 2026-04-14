@@ -3,7 +3,7 @@ import { GoogleGenAI, Modality, LiveServerMessage, ThinkingLevel } from "@google
 import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, LogIn, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, googleProvider, db } from '../firebase';
-import { signInWithPopup, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { signInWithPopup, onAuthStateChanged, User, signOut, GoogleAuthProvider } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { getAccessToken, QuotaExceededError } from '../auth-utils';
 
@@ -74,11 +74,28 @@ export default function LiveAudioSession() {
       console.log("Starting Firebase sign-in...");
       const result = await signInWithPopup(auth, googleProvider);
       console.log("Firebase sign-in successful:", result.user.email);
+      
+      // Try to get the Gemini access token directly from the Firebase result
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      
+      if (token) {
+        console.log("Gemini access token obtained from Firebase result.");
+        setAccessToken(token);
+      } else {
+        console.warn("No access token in Firebase result. Falling back to custom OAuth...");
+        // Fallback to custom OAuth if Firebase didn't provide the token
+        const customToken = await getAccessToken();
+        setAccessToken(customToken);
+      }
     } catch (err: any) {
       console.error("Sign in failed:", err);
       let errorMessage = "Sign in failed. ";
+      
       if (err.code === 'auth/unauthorized-domain') {
-        errorMessage += "This domain is not authorized in Firebase Console. Please add your Vercel domain to 'Authorized domains' in Firebase Authentication settings.";
+        errorMessage += "This domain is not authorized. Please add your Vercel domain to 'Authorized domains' in Firebase Authentication settings.";
+      } else if (err.message?.includes("popup-closed-by-user")) {
+        errorMessage += "Sign-in window was closed. Please try again.";
       } else {
         errorMessage += err.message || "Please try again.";
       }
@@ -221,9 +238,14 @@ export default function LiveAudioSession() {
           console.log("Gemini Connect token obtained successfully.");
         } catch (err: any) {
           console.error("Failed to get access token:", err);
-          setError(`Gemini Connect Error: ${err.message}`);
-          if (err.message.includes("timed out") || err.message.includes("blocked")) {
-            throw err;
+          // If we have an API key, we can still try to proceed, but the user requested per-user quota
+          if (process.env.GEMINI_API_KEY) {
+            console.log("Falling back to developer API key.");
+          } else {
+            setError(`Gemini Connect Error: ${err.message}. Please sign in again.`);
+            if (err.message.includes("timed out") || err.message.includes("blocked")) {
+              throw err;
+            }
           }
         }
       }
@@ -231,7 +253,7 @@ export default function LiveAudioSession() {
       const apiKey = process.env.GEMINI_API_KEY;
       
       // Initialize AI with either accessToken (per-user quota) or apiKey (developer quota)
-      const ai = new GoogleGenAI(token ? { accessToken: token } : { apiKey: apiKey! });
+      const ai = new GoogleGenAI(token ? ({ accessToken: token } as any) : { apiKey: apiKey! });
       
       if (!token && !apiKey) {
         throw new Error("Authentication failed. Please sign in or provide an API key.");
@@ -418,6 +440,16 @@ Keep answers very brief for voice. Namaste!`,
                     <p>Client ID: {process.env.VITE_CLIENT_ID ? "✅ Set" : "❌ Missing"}</p>
                     <p>App URL: {process.env.VITE_APP_URL || "Using Origin"}</p>
                     <p>Redirect URI: {`${process.env.VITE_APP_URL || window.location.origin}/oauth-redirect.html`}</p>
+                    
+                    <div className="mt-4 pt-4 border-t border-neutral-800 text-[9px] text-neutral-500 space-y-2 font-sans">
+                      <p className="font-bold text-neutral-400">Vercel Setup Checklist:</p>
+                      <ol className="list-decimal pl-4 space-y-1">
+                        <li>Add <span className="text-blue-400">{window.location.origin}</span> to <b>Firebase Console</b> &gt; Auth &gt; Settings &gt; Authorized Domains.</li>
+                        <li>Add <span className="text-blue-400">{`${window.location.origin}/oauth-redirect.html`}</span> to <b>GCP Console</b> &gt; APIs &gt; Credentials &gt; OAuth 2.0 Client ID &gt; Redirect URIs.</li>
+                        <li>In GCP Console, ensure <b>Generative Language API</b> is enabled.</li>
+                        <li>Set <code className="text-amber-400">VITE_CLIENT_ID</code> in Vercel Environment Variables.</li>
+                      </ol>
+                    </div>
                   </div>
                 </details>
               </div>
